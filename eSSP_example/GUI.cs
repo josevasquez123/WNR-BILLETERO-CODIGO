@@ -42,8 +42,12 @@ namespace eSSP_example
         private bool devolucionDineroPorInactividad;
 
         System.Timers.Timer timerUsuarioInactivo = new System.Timers.Timer();
+        System.Timers.Timer timerTotemInactivo = new System.Timers.Timer();
 
-        private decimal ultimoBilleteIngresado = 0;
+        private int usuarioInactivoTimeout = 15*1000;//2*60*1000;
+        private int totemInactivoTimeout = 10 * 1000;
+
+        //private decimal ultimoBilleteIngresado = 0;
 
         StatusNV11 nv11Parameters;
         public GUI()
@@ -73,7 +77,10 @@ namespace eSSP_example
             _ = subscribeEvents();
 
             timerUsuarioInactivo.Elapsed += new ElapsedEventHandler(OnTimedEvent);
-            timerUsuarioInactivo.Interval = 15000;
+            timerUsuarioInactivo.Interval = usuarioInactivoTimeout;
+
+            timerTotemInactivo.Elapsed += new ElapsedEventHandler(OnTotemTimedEvent);
+            timerTotemInactivo.Interval = totemInactivoTimeout;
 
             // Connect to validator
             if (ConnectToValidator(reconnectionAttempts))
@@ -405,7 +412,7 @@ namespace eSSP_example
             guiVar.MQTTClient = mqttFactory.CreateMqttClient();
 
             var mqttClientOptions = new MqttClientOptionsBuilder()
-                        .WithTcpServer("100.26.219.8", 1883)
+                        .WithTcpServer("35.175.102.8", 1883)
                         .WithCredentials("billeteronv11", "billeterownr123")
                         .Build();
 
@@ -465,6 +472,7 @@ namespace eSSP_example
                         _ = sendPayload("Payment/Proceso/VueltoSuficiente/", "true");
                         guiVar.flagVuelto = true;
                         Console.WriteLine("Si hay vuelto");
+                        guiVar.timerTotemInactivo.Start();
                     }
                     else
                     {
@@ -475,6 +483,8 @@ namespace eSSP_example
                 }
                 else if (topico == "Payment/Proceso/PrecioServicio/")
                 {
+                    guiVar.timerTotemInactivo.Stop();
+
                     if (guiVar.flagVuelto)
                     {
                         int temp = int.Parse(payload);
@@ -520,6 +530,8 @@ namespace eSSP_example
                 }
                 else if(topico == "Payment/Proceso/Continuar/")
                 {
+                    guiVar.timerTotemInactivo.Stop();
+
                     if (payload == "true")
                     {
                         guiVar.newTransaction = true;
@@ -601,6 +613,18 @@ namespace eSSP_example
             guiVar.NV12.DisablePayout();
             guiVar.timerUsuarioInactivo.Stop();
             _ = sendPayload("Payment/Situacion/", "Inactividad");
+            
+            guiVar.timerTotemInactivo.Start();
+        }
+
+        private static void OnTotemTimedEvent(object source, ElapsedEventArgs e)
+        {
+            guiVar.newTransaction = false;
+            guiVar.NV12.DisableValidator();
+            guiVar.NV12.DisablePayout();
+            guiVar.timerTotemInactivo.Stop();
+            _ = sendPayload("Payment/Totem/", "Totem no responde");
+            guiVar.devolucionDineroPorInactividad = true;
         }
     }
 }
